@@ -2,9 +2,36 @@ import { useCallback, useEffect, useState } from "react";
 import logo from "./logo.png";
 import "./App.css";
 
+const origin = window.location.origin;
 const targetOrigin = "https://stvnganga.github.io";
+const cardNumberUrl = `${targetOrigin}/card?origin=${origin}`;
+const expiryUrl = `${targetOrigin}/expiry?origin=${origin}`;
+const cvvUrl = `${targetOrigin}/cvv?origin=${origin}`;
+const CARD_CONFIG = {
+  networkCode: "VISA",
+  inputs: [
+    {
+      key: "card",
+      title: "Card Number",
+      fieldName: "cardNumber",
+      iframeUrl: cardNumberUrl,
+    },
+    {
+      key: "expiry",
+      title: "Expiry",
+      fieldName: "expiry",
+      iframeUrl: expiryUrl,
+    },
+    {
+      key: "cvv",
+      title: "Security Code (cvv)",
+      fieldName: "cvv",
+      iframeUrl: cvvUrl,
+    },
+  ],
+};
 
-function Row({ fieldName, iframeUrl, title, focused, valid, loading }) {
+function Field({ fieldName, iframeUrl, title, focused, valid, loading }) {
   const message = "Invalid " + title;
   const [src, setSrc] = useState(null);
 
@@ -61,11 +88,6 @@ function Row({ fieldName, iframeUrl, title, focused, valid, loading }) {
 }
 
 function App() {
-  const origin = window.location.origin;
-  const cardNumberUrl = `${targetOrigin}/card?origin=${origin}`;
-  const expiryUrl = `${targetOrigin}/expiry?origin=${origin}`;
-  const cvvUrl = `${targetOrigin}/cvv?origin=${origin}`;
-
   const [status, setStatus] = useState({});
   const [loading, setLoading] = useState(false);
   const [focus, setFocus] = useState({
@@ -200,32 +222,18 @@ function App() {
           </div>
         )}
         <div className="card-body">
-          <Row
-            loading={loading}
-            focused={focus.card}
-            valid={valid.card}
-            fieldName="cardNumber"
-            title="Card Number"
-            message="Here is some info about this field"
-            iframeUrl={cardNumberUrl}
-          ></Row>
-          <Row
-            loading={loading}
-            focused={focus.expiry}
-            valid={valid.expiry}
-            fieldName="expiry"
-            title="Expiry"
-            iframeUrl={expiryUrl}
-          ></Row>
-          <Row
-            loading={loading}
-            focused={focus.cvv}
-            valid={valid.cvv}
-            fieldName="cvv"
-            title="Security Code (cvv)"
-            message="Here is some info about this field."
-            iframeUrl={cvvUrl}
-          ></Row>
+          {CARD_CONFIG.inputs.map((fieldConfig, index) => (
+            <Field
+              key={index}
+              loading={loading}
+              title={fieldConfig.title}
+              valid={valid[fieldConfig.key]}
+              focused={focus[fieldConfig.key]}
+              fieldName={fieldConfig.fieldName}
+              iframeUrl={fieldConfig.iframeUrl}
+            />
+          ))}
+
           <button
             className="submit-btn"
             disabled={!readyToPay || loading}
