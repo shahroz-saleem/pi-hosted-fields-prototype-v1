@@ -3,17 +3,19 @@ import logo from "./logo.png";
 import "./App.css";
 
 const origin = window.location.origin;
-const targetOrigin = "https://stvnganga.github.io";
-const cardNumberUrl = `${targetOrigin}/card?origin=${origin}`;
+const targetOrigin = "http://localhost:5173";
+const controllerUrl = `${targetOrigin}/controller?origin=${origin}`;
+const cardHolderNameUrl = `${targetOrigin}/name?origin=${origin}`;
+const cardNumberUrl = `${targetOrigin}/number?origin=${origin}`;
 const expiryUrl = `${targetOrigin}/expiry?origin=${origin}`;
 const cvvUrl = `${targetOrigin}/cvv?origin=${origin}`;
 const CARD_CONFIG = {
   networkCode: "VISA",
   inputs: [
     {
-      key: "card",
+      key: "number",
       title: "Card Number",
-      fieldName: "cardNumber",
+      fieldName: "number",
       iframeUrl: cardNumberUrl,
     },
     {
@@ -27,6 +29,12 @@ const CARD_CONFIG = {
       title: "Security Code (cvv)",
       fieldName: "cvv",
       iframeUrl: cvvUrl,
+    },
+    {
+      key: "name",
+      title: "Card Holder Name",
+      fieldName: "name",
+      iframeUrl: cardHolderNameUrl,
     },
   ],
 };
@@ -90,62 +98,70 @@ function Field({ fieldName, iframeUrl, title, focused, valid, loading }) {
 function App() {
   const [status, setStatus] = useState({});
   const [loading, setLoading] = useState(false);
+  const [network, setNetwork] = useState("");
   const [focus, setFocus] = useState({
-    card: false,
+    number: false,
     expiry: false,
     cvv: false,
+    name: false,
   });
   const [valid, setValid] = useState({
-    card: "",
+    number: "",
     expiry: "",
     cvv: "",
+    name: "",
   });
-
   const [readyToPay, setReadyToPay] = useState(false);
+
   useEffect(() => {
-    setReadyToPay(valid.card && valid.expiry && valid.cvv);
+    setReadyToPay(valid.number && valid.expiry && valid.cvv && valid.name);
   }, [valid]);
 
   const listener = useCallback(
     (event) => {
+      console.log("P<=>Event occurred :: ", event);
+      console.log("P<=> event.origin :: ", event.origin);
+      console.log("P<=> targetOrigin :: ", targetOrigin);
+      console.log("P<=> event.origin !== targetOrigin :: ", event.origin !== targetOrigin);
       if (event.origin !== targetOrigin) return;
 
+      console.log("P<=>Event occurred after ");
+
       const body = event.data;
-      switch (body.messageType) {
-        case "validation":
+      switch (body.type) {
+        case "VALIDATION_INFO":
           setStatus({});
           setValid({
             ...valid,
-            [body.from]: body.data.valid,
+            [body.sender]: Boolean(body.message),
           });
           break;
 
-        case "event":
-          switch (body.data.eventName) {
-            case "onfocus":
-              setFocus({
-                card: false,
-                expiry: false,
-                cvv: false,
-                [body.from]: true,
-              });
-              break;
-
-            case "onblur":
-              setFocus({
-                card: false,
-                expiry: false,
-                cvv: false,
-              });
-              break;
-
-            default:
-              break;
-          }
+        case "FOCUS_INFO":
+          setFocus({
+            number: false,
+            expiry: false,
+            cvv: false,
+            name: false,
+            [body.sender]: true,
+          });
           break;
 
-        case "payment-status":
-          completePayment(body.data);
+        case "BLUR_INFO":
+          setFocus({
+            number: false,
+            expiry: false,
+            cvv: false,
+            name: false,
+          });
+          break;
+
+        case "NETWORK_INFO":
+          setNetwork(body.message);
+          break;
+
+        case "PAYMENT_RESPONSE":
+          completePayment(Boolean(body.message));
           break;
 
         default:
@@ -156,16 +172,19 @@ function App() {
   );
 
   useEffect(() => {
+    console.log("P<=> ADDING EVENT");
     window.addEventListener("message", listener);
+    console.log("P<=> ADDED EVENT ");
 
     return () => {
+      console.log("P<=> REMOVING E ");
       window.removeEventListener("message", listener);
     };
   }, [listener]);
 
   useEffect(() => {
     // Internal channel that iframes use to communicate
-    const iframeChannel = new BroadcastChannel("payment");
+    const iframeChannel = new BroadcastChannel("MY_PRIVATE_CHANNEL");
     iframeChannel.onmessage = (event) => {
       console.log("Parent <== Received message from iframe channel ", event);
     };
@@ -177,13 +196,13 @@ function App() {
       message: "Payment in progress",
       type: "processing",
     });
-    const iframe = document.getElementById("cardNumber");
+    const iframe = document.getElementById("controller");
     const frameWindow = iframe.contentWindow || iframe.contentDocument;
     frameWindow.postMessage(
       {
-        from: "web-sdk",
-        messageType: "start-payment",
-        data: {
+        sender: "card-components",
+        type: "PAYMENT_REQUEST",
+        message: {
           abc: 123,
           key2: "value2",
         },
@@ -192,29 +211,37 @@ function App() {
     );
   }
 
-  function completePayment(data) {
-    if (data.statusCode < 300) {
+  function completePayment(message) {
+    console.log('completePayment :: ', message);
+    if (message) {
       setValid({
-        card: "",
+        number: "",
         expiry: "",
         cvv: "",
+        name: "",
+      });
+      setStatus({
+        message: "Payment Successful",
+        type: "success",
+      });
+    } else {
+      setStatus({
+        message: "Payment Failed",
+        type: "error",
       });
     }
     setFocus({
-      card: false,
+      number: false,
       expiry: false,
       cvv: false,
-    });
-
-    setStatus({
-      message: data.message,
-      type: data.statusCode >= 300 ? "error" : "success",
+      name: false,
     });
     setLoading(false);
   }
 
   return (
     <div className="app">
+      <h1>Network: {network}</h1>
       <div className="card">
         {status.message && (
           <div className="card-head" type={status.type}>
@@ -222,6 +249,14 @@ function App() {
           </div>
         )}
         <div className="card-body">
+          <iframe
+            src={controllerUrl}
+            frameBorder="0"
+            className="field-iframe"
+            title="controller"
+            id="controller"
+            style={{ display: "none" }}
+          />
           {CARD_CONFIG.inputs.map((fieldConfig, index) => (
             <Field
               key={index}
@@ -249,4 +284,3 @@ function App() {
 }
 
 export default App;
-
